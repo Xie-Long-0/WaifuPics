@@ -14,6 +14,8 @@ void ImageView::setImage(const QImage &img)
     {
         m_movie->stop();
         m_movie->device()->deleteLater();
+        // 防止内部device二次删除
+        m_movie->setDevice(nullptr);
         m_movie->deleteLater();
         m_movie = nullptr;
     }

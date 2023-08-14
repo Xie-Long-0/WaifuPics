@@ -33,6 +33,13 @@ private slots:
     void onReplyFinished(QNetworkReply *reply);
 
 private:
+    bool isSupportedMovie(const QString &fileName) const;
+    bool readImage(const QString &name);
+    bool readImage(const QByteArray &data);
+    bool readMovie(const QString &name);
+    bool readMovie(const QByteArray &data);
+
+private:
     Ui::Widget *ui;
     ImageView *m_viewer = nullptr;
 

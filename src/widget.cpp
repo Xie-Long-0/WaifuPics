@@ -71,7 +71,7 @@ Widget::Widget(QWidget *parent)
         QUrl url(m_picUrl);
         auto name = url.path();
 
-        if (name.right(4) == ".gif" || name.right(5) == ".webp")
+        if (isSupportedMovie(name))
         {
             auto mov = m_viewer->movie();
             if (mov == nullptr)
@@ -82,10 +82,16 @@ Widget::Widget(QWidget *parent)
                 "Images (*.gif *.webp)");
             if (!name.isEmpty())
             {
-                auto data = mov->device()->readAll();
+                mov->stop();
+                auto buf = mov->device();
+                // NOTE: 在读取完整数据时需要将位置设置为0
+                buf->seek(0);
+                auto data = buf->readAll();
                 QFile file(name);
                 file.open(QIODevice::WriteOnly);
                 file.write(data);
+                file.close();
+                mov->start();
             }
         }
         else
@@ -125,11 +131,17 @@ void Widget::onOpenImgBtnClicked()
     if (imgName.isEmpty())
         return;
 
-    QImage img(imgName);
-    if (img.isNull())
-        return;
+    if (isSupportedMovie(imgName))
+    {
+        if (readMovie(imgName) == false)
+            return;
+    }
+    else
+    {
+        if (readImage(imgName) == false)
+            return;
+    }
 
-    m_viewer->setImage(img);
     ui->imgPathLineEdit->setText(imgName);
 
     ui->zoomInBtn->setEnabled(true);
@@ -168,6 +180,7 @@ void Widget::onWfTakePicsBtnClicked()
 {
     m_requestPic = false;
     ui->wf_takeButton->setEnabled(false);
+    ui->openImgBtn->setEnabled(false);
 
     QUrl url(QString("https://api.waifu.pics/%1/%2")
         .arg(ui->wf_typeComBox->currentText())
@@ -184,11 +197,13 @@ void Widget::onReplyFinished(QNetworkReply *reply)
         QMessageBox::critical(this, tr("发生错误"), reply->errorString());
         qWarning() << "Reply error:" << reply->errorString();
         ui->wf_takeButton->setEnabled(true);
+        ui->openImgBtn->setEnabled(true);
         return;
     }
 
     auto data = reply->readAll();
 
+    // 获取图片地址的响应报文
     if (m_requestPic == false)
     {
         // 使用正则表达式匹配模板 `{"url":"urltext"}\n`
@@ -199,6 +214,7 @@ void Widget::onReplyFinished(QNetworkReply *reply)
             qDebug() << data;
             qWarning() << "Content does not match";
             ui->wf_takeButton->setEnabled(true);
+            ui->openImgBtn->setEnabled(true);
             return;
         }
 
@@ -208,46 +224,17 @@ void Widget::onReplyFinished(QNetworkReply *reply)
         m_requestPic = true;
         m_manager->get(QNetworkRequest(m_picUrl));
     }
-    else // 获取图片
+    else // 获取图片的响应报文
     {
-        if (m_picUrl.right(4) == ".gif" || m_picUrl.right(5) == ".webp")
+        if (isSupportedMovie(m_picUrl))
         {
-            // 将数据存到QBuffer中以提供QMovie读取
-            auto buf = new QBuffer(this);
-            buf->setData(data);
-            if (!buf->open(QIODevice::ReadOnly))
-            {
-                qWarning() << "Can not read data for QBuffer";
-                ui->wf_takeButton->setEnabled(true);
-                buf->deleteLater();
+            if (readMovie(data) == false)
                 return;
-            }
-
-            auto mov = new QMovie(this);
-            mov->setDevice(buf);
-            if (!mov->isValid())
-            {
-                qWarning() << "Data is invalid for QMovie";
-                ui->wf_takeButton->setEnabled(true);
-                buf->deleteLater();
-                mov->deleteLater();
-                return;
-            }
-
-            m_viewer->setMovie(mov);
         }
         else
         {
-            QImage img;
-            img.loadFromData(data);
-            if (img.isNull())
-            {
-                qWarning() << "Image data is invalid";
-                ui->wf_takeButton->setEnabled(true);
+            if (readImage(data) == false)
                 return;
-            }
-
-            m_viewer->setImage(img);
         }
 
         ui->imgPathLineEdit->setText(m_picUrl);
@@ -259,7 +246,80 @@ void Widget::onReplyFinished(QNetworkReply *reply)
         ui->adjustImgBtn->setEnabled(true);
         ui->savePicBtn->setEnabled(true);
         ui->wf_takeButton->setEnabled(true);
+        ui->openImgBtn->setEnabled(true);
     }
+}
+
+bool Widget::isSupportedMovie(const QString &fileName) const
+{
+    return fileName.size() > 3 && (fileName.right(4) == ".gif" || fileName.right(5) == ".webp");
+}
+
+bool Widget::readImage(const QString &name)
+{
+    QImage img(name);
+    if (img.isNull())
+        return false;
+
+    m_viewer->setImage(img);
+    return true;
+}
+
+bool Widget::readImage(const QByteArray &data)
+{
+    QImage img;
+    img.loadFromData(data);
+    if (img.isNull())
+    {
+        qWarning() << "Image data is invalid";
+        ui->wf_takeButton->setEnabled(true);
+        ui->openImgBtn->setEnabled(true);
+        return false;
+    }
+
+    m_viewer->setImage(img);
+    return true;
+}
+
+bool Widget::readMovie(const QString &name)
+{
+    auto mov = new QMovie(this);
+    mov->setFileName(name);
+    if (!mov->isValid())
+        return false;
+
+    m_viewer->setMovie(mov);
+    return true;
+}
+
+bool Widget::readMovie(const QByteArray &data)
+{
+    // 将数据存到QBuffer中以提供QMovie读取
+    auto buf = new QBuffer(this);
+    buf->setData(data);
+    if (!buf->open(QIODevice::ReadOnly))
+    {
+        qWarning() << "Can not read data for QBuffer";
+        ui->wf_takeButton->setEnabled(true);
+        ui->openImgBtn->setEnabled(true);
+        buf->deleteLater();
+        return false;
+    }
+
+    auto mov = new QMovie(this);
+    mov->setDevice(buf);
+    if (!mov->isValid())
+    {
+        qWarning() << "Data is invalid for QMovie";
+        ui->wf_takeButton->setEnabled(true);
+        ui->openImgBtn->setEnabled(true);
+        buf->deleteLater();
+        mov->deleteLater();
+        return false;
+    }
+
+    m_viewer->setMovie(mov);
+    return true;
 }
 
 void Widget::onWfTypeComboxChanged(const QString &text)

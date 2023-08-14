@@ -24,6 +24,9 @@
   <ItemGroup>
     <QtUic Include="src\widget.ui" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{B86FD40B-8A2F-31E9-A7A7-878A326BD938}</ProjectGuid>
     <RootNamespace>WaifuPics</RootNamespace>
