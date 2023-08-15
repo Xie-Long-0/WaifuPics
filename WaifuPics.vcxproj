@@ -25,6 +25,7 @@
     <QtUic Include="src\widget.ui" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".github\workflows\qtbuild.yml" />
     <None Include="README.md" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

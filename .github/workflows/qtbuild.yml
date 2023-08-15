@@ -1,0 +1,80 @@
+name: MSBuild
+
+on:
+  workflow_dispatch:  
+
+env:
+  # Path to the solution file relative to the root of the project.
+  SOLUTION_FILE_PATH: .
+
+  # Configuration type to build.
+  # You can convert this to a build matrix if you need coverage of multiple configuration types.
+  # https://docs.github.com/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+  BUILD_CONFIGURATION: Release
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      # 配置
+      matrix:
+        qt_ver: [6.5.2]
+        qt_target: [desktop]
+        qt_arch: [win64_msvc2019_64]
+        # 额外选项
+        include:
+        - qt_arch: win64_msvc2019_64
+          msvc_arch: x64
+          qt_path: msvc2019_64
+
+    steps:
+    # Cache Qt
+    - name: Cache Qt
+      id: cacheqt6
+      uses: actions/cache@v3.2.6
+      with:
+        # A list of files, directories, and wildcard patterns to cache and restore
+        path: ${{runner.workspace}}/Qt/${{matrix.qt_ver}}/${{matrix.qt_path}}
+        key: win-qt6
+
+    # Setup Qt
+    - name: Setup Qt
+      if: steps.cacheqt6.outputs.cache-hit == 'true'
+      shell: pwsh
+      env:
+        QT_PATH: ${{runner.workspace}}/Qt/${{matrix.qt_ver}}/${{matrix.qt_path}}
+      run: |
+        $qtpath=${env:QT_PATH}
+        echo "{Qt6_DIR}={$qtpath}" >> $GITHUB_ENV
+        echo "{QT_PLUGIN_PATH}={$qtpath/plugins}" >> $GITHUB_ENV
+        echo "{IQTA_TOOLS}={${{runner.workspace}}/Qt/Tools}" >> $GITHUB_ENV
+        echo "{$qtpath/bin}" >> $GITHUB_PATH
+
+    # install Qt
+    - name: Install Qt
+      if: steps.cacheqt6.outputs.cache-hit != 'true'
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: ${{ matrix.qt_ver }}
+        host: 'windows'
+        target: ${{ matrix.qt_target }}
+        arch: ${{ matrix.qt_arch }}
+        modules: 
+        tools: 'tools_cmake tools_ninja'
+        setup-python: 'false'
+
+    # Pull code
+    - uses: actions/checkout@v3
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v1
+
+    - name: Build
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      env:
+        QtToolsPath: ${{runner.workspace}}/Qt/${{matrix.qt_ver}}/${{matrix.qt_path}}/bin
+
+      run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}}
