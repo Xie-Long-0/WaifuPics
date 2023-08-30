@@ -35,6 +35,19 @@ Widget::Widget(QWidget *parent)
             qWarning() << errors;
         });
 
+    // 获取支持的图片格式
+    auto imageFmts = QImageReader::supportedImageFormats();
+    for (auto &fmt : imageFmts)
+    {
+        m_supportedImageFmts.append("*." + fmt);
+    }
+    // 获取支持的动图格式
+    auto movieFmts = QMovie::supportedFormats();
+    for (auto &fmt : movieFmts)
+    {
+        m_supportedMovieFmts.append("*." + fmt);
+    }
+
     // 使用`https://waifu.pics/docs`接口获取图片
     // categories for sfw and nsfw
     m_sfwList = {
@@ -67,6 +80,7 @@ Widget::Widget(QWidget *parent)
     connect(ui->zoomOutBtn, &QPushButton::clicked, this, &Widget::onZoomOutBtnClicked);
     connect(ui->wf_takeButton, &QPushButton::clicked, this, &Widget::onWfTakePicsBtnClicked);
     connect(ui->wf_typeComBox, &QComboBox::currentTextChanged, this, &Widget::onWfTypeComboxChanged);
+
     connect(ui->savePicBtn, &QPushButton::clicked, this, [=] {
         QUrl url(m_picUrl);
         auto name = url.path();
@@ -79,7 +93,7 @@ Widget::Widget(QWidget *parent)
 
             name = QFileDialog::getSaveFileName(this, tr("保存图片"),
                 QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + name,
-                "Images (*.gif *.webp)");
+                tr("动画 (%1)").arg(m_supportedMovieFmts.join(' ')));
             if (!name.isEmpty())
             {
                 mov->stop();
@@ -102,7 +116,7 @@ Widget::Widget(QWidget *parent)
 
             name = QFileDialog::getSaveFileName(this, tr("保存图片"),
                 QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + name,
-                "Images (*.bmp *.jpg *.jpeg *.png *.ico *.svg *.webp *.tiff)");
+                tr("图片 (%1)").arg(m_supportedImageFmts.join(' ')));
             if (!name.isEmpty())
             {
                 img.save(name);
@@ -127,7 +141,7 @@ void Widget::onOpenImgBtnClicked()
 {
     QString imgName = QFileDialog::getOpenFileName(this, tr("打开图片"),
                                    QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
-                                   "Images (*.bmp *.jpg *.jpeg *.png *.gif *.ico *.svg *.webp *.tiff)");
+                                   tr("图片 (%1)").arg(m_supportedImageFmts.join(' ')));
     if (imgName.isEmpty())
         return;
 
@@ -252,7 +266,15 @@ void Widget::onReplyFinished(QNetworkReply *reply)
 
 bool Widget::isSupportedMovie(const QString &fileName) const
 {
-    return fileName.size() > 3 && (fileName.right(4) == ".gif" || fileName.right(5) == ".webp");
+    if (fileName.size() > 3)
+    {
+        for (auto &fmt : m_supportedMovieFmts)
+        {
+            if (fileName.split('.').last() == fmt.split('.').last())
+                return true;
+        }
+    }
+    return false;
 }
 
 bool Widget::readImage(const QString &name)
@@ -294,7 +316,7 @@ bool Widget::readMovie(const QString &name)
 
 bool Widget::readMovie(const QByteArray &data)
 {
-    // 将数据存到QBuffer中以提供QMovie读取
+    // 将数据存到QBuffer中以供QMovie读取
     auto buf = new QBuffer(this);
     buf->setData(data);
     if (!buf->open(QIODevice::ReadOnly))

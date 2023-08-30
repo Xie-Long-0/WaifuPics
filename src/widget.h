@@ -50,4 +50,7 @@ private:
     // categories for sfw and nsfw
     QStringList m_sfwList;
     QStringList m_nsfwList;
+
+    QStringList m_supportedMovieFmts;
+    QStringList m_supportedImageFmts;
 };
