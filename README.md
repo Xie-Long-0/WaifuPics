@@ -1,3 +1,5 @@
 # WaifuPics
 
-ÀûÓÃ [waifu.pics](https://waifu.pics/docs) »ñÈ¡Ëæ»úÍ¼Æ¬£¬Ê¹ÓÃ [ImageView](https://github.com/Xie-Long-0/Qt_projects/tree/master/ImageView) ÏÔÊ¾Í¼Æ¬£¬Ö§³Ö¶¯Í¼¡£
+åˆ©ç”¨ [waifu.pics](https://waifu.pics/docs) è·å–éšæœºå›¾ç‰‡ï¼Œä½¿ç”¨ [ImageView](https://github.com/Xie-Long-0/Qt_projects/tree/master/ImageView) æ˜¾ç¤ºå›¾ç‰‡ï¼Œæ”¯æŒåŠ¨å›¾ã€‚
+
+_NSFW Warning! Note that some contents are age-restricted._
