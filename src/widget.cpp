@@ -6,12 +6,14 @@
 #include <QStandardPaths>
 #include <QBuffer>
 #include <QMessageBox>
+#include <QDebug>
 
 #include "ImageView.h"
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget)
+    , m_settings("Configs.ini", QSettings::IniFormat)
 {
     ui->setupUi(this);
     setWindowTitle(tr("看图"));
@@ -36,17 +38,10 @@ Widget::Widget(QWidget *parent)
         });
 
     // 获取支持的图片格式
-    auto imageFmts = QImageReader::supportedImageFormats();
-    for (auto &fmt : imageFmts)
-    {
-        m_supportedImageFmts.append("*." + fmt);
-    }
+    m_supportedImageFmts = QImageReader::supportedImageFormats();
+
     // 获取支持的动图格式
-    auto movieFmts = QMovie::supportedFormats();
-    for (auto &fmt : movieFmts)
-    {
-        m_supportedMovieFmts.append("*." + fmt);
-    }
+    m_supportedMovieFmts = QMovie::supportedFormats();
 
     // 使用`https://waifu.pics/docs`接口获取图片
     // categories for sfw and nsfw
@@ -72,6 +67,24 @@ Widget::Widget(QWidget *parent)
     }
     ui->wf_categoryComBox->setCurrentIndex(0);
 
+    // 恢复窗口状态
+    if (bool max = m_settings.value("WindowMaximize", false).toBool(); max == true)
+    {
+        showMaximized();
+    }
+    else
+    {
+        if (auto size = m_settings.value("WindowSize").toSize(); size.isValid())
+        {
+            resize(size);
+        }
+        if (auto pos = m_settings.value("WindowPos").toPoint(); !pos.isNull())
+        {
+            move(pos);
+        }
+    }
+    m_lastPath = m_settings.value("LastSavePath", QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)).toString();
+
     connect(ui->adjustImgBtn, &QPushButton::clicked, this, &Widget::onAdjustImgBtnClicked);
     connect(ui->centerImgBtn, &QPushButton::clicked, this, &Widget::onCenterImgBtnClicked);
     connect(ui->openImgBtn, &QPushButton::clicked, this, &Widget::onOpenImgBtnClicked);
@@ -91,11 +104,14 @@ Widget::Widget(QWidget *parent)
             if (mov == nullptr)
                 return;
 
-            name = QFileDialog::getSaveFileName(this, tr("保存图片"),
-                QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + name,
-                tr("动画 (%1)").arg(m_supportedMovieFmts.join(' ')));
-            if (!name.isEmpty())
+            QString suffix = "*." + m_supportedMovieFmts.join(" *.");
+            QFileDialog dlg(this, tr("保存图片"), m_lastPath + name, tr("动画 (%1)").arg(suffix));
+            dlg.setFileMode(QFileDialog::FileMode::AnyFile);
+            dlg.setAcceptMode(QFileDialog::AcceptSave);
+
+            if (dlg.exec() == QFileDialog::Accepted)
             {
+                name = dlg.selectedFiles().first();
                 mov->stop();
                 auto buf = mov->device();
                 // NOTE: 在读取完整数据时需要将位置设置为0
@@ -106,6 +122,9 @@ Widget::Widget(QWidget *parent)
                 file.write(data);
                 file.close();
                 mov->start();
+                QUrl url = dlg.selectedUrls().first();
+                m_lastPath = url.toLocalFile().remove(url.fileName());
+                QMessageBox::information(this, tr("保存成功"), tr("图片已保存到 %1").arg(name));
             }
         }
         else
@@ -114,12 +133,18 @@ Widget::Widget(QWidget *parent)
             if (img.isNull())
                 return;
 
-            name = QFileDialog::getSaveFileName(this, tr("保存图片"),
-                QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + name,
-                tr("图片 (%1)").arg(m_supportedImageFmts.join(' ')));
-            if (!name.isEmpty())
+            QString suffix = "*." + m_supportedImageFmts.join(" *.");
+            QFileDialog dlg(this, tr("保存图片"), m_lastPath + name, tr("图片 (%1)").arg(suffix));
+            dlg.setFileMode(QFileDialog::FileMode::AnyFile);
+            dlg.setAcceptMode(QFileDialog::AcceptSave);
+
+            if (dlg.exec() == QFileDialog::Accepted)
             {
+                name = dlg.selectedFiles().first();
                 img.save(name);
+                QUrl url = dlg.selectedUrls().first();
+                m_lastPath = url.toLocalFile().remove(url.fileName());
+                QMessageBox::information(this, tr("保存成功"), tr("图片已保存到 %1").arg(name));
             }
         }
         });
@@ -130,18 +155,29 @@ Widget::Widget(QWidget *parent)
     ui->centerImgBtn->setEnabled(false);
     ui->adjustImgBtn->setEnabled(false);
     ui->savePicBtn->setEnabled(false);
+
+#ifdef QT_DEBUG
+    QDir::current().mkdir("tmp");
+#endif
 }
 
 Widget::~Widget()
 {
+    m_settings.setValue("WindowMaximize", isMaximized());
+    if (!isMaximized() && !isMinimized())
+    {
+        m_settings.setValue("WindowSize", size());
+        m_settings.setValue("WindowPos", pos());
+    }
+    m_settings.setValue("LastSavePath", m_lastPath);
     delete ui;
 }
 
 void Widget::onOpenImgBtnClicked()
 {
     QString imgName = QFileDialog::getOpenFileName(this, tr("打开图片"),
-                                   QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
-                                   tr("图片 (%1)").arg(m_supportedImageFmts.join(' ')));
+        QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
+        tr("图片 (%1)").arg(m_supportedImageFmts.join(' ')));
     if (imgName.isEmpty())
         return;
 
@@ -201,6 +237,9 @@ void Widget::onWfTakePicsBtnClicked()
         .arg(ui->wf_categoryComBox->currentText()));
 
     QNetworkRequest rqst(url);
+#if QT_VERSION >= QT_VERSION_CHECK(5,15,0)
+    rqst.setTransferTimeout(10000);
+#endif
     m_manager->get(rqst);
 }
 
@@ -212,6 +251,7 @@ void Widget::onReplyFinished(QNetworkReply *reply)
         qWarning() << "Reply error:" << reply->errorString();
         ui->wf_takeButton->setEnabled(true);
         ui->openImgBtn->setEnabled(true);
+        ui->progressBar->reset();
         return;
     }
 
@@ -236,7 +276,15 @@ void Widget::onReplyFinished(QNetworkReply *reply)
         qDebug() << m_picUrl;
 
         m_requestPic = true;
-        m_manager->get(QNetworkRequest(m_picUrl));
+
+        QNetworkRequest rqst(m_picUrl);
+#if QT_VERSION >= QT_VERSION_CHECK(5,15,0)
+        rqst.setTransferTimeout(10000);
+#endif
+        auto p_reply = m_manager->get(rqst);
+        connect(p_reply, &QNetworkReply::downloadProgress, this, [=](qint64 rec, qint64 total) {
+            ui->progressBar->setValue(rec * 100 / total);
+            });
     }
     else // 获取图片的响应报文
     {
@@ -266,11 +314,12 @@ void Widget::onReplyFinished(QNetworkReply *reply)
 
 bool Widget::isSupportedMovie(const QString &fileName) const
 {
-    if (fileName.size() > 3)
+    if (fileName.size() >= 3)
     {
+        QString suffix = fileName.split('.').last();
         for (auto &fmt : m_supportedMovieFmts)
         {
-            if (fileName.split('.').last() == fmt.split('.').last())
+            if (suffix == fmt)
                 return true;
         }
     }
@@ -300,6 +349,9 @@ bool Widget::readImage(const QByteArray &data)
     }
 
     m_viewer->setImage(img);
+#ifdef QT_DEBUG
+    img.save("tmp/" + QUrl(m_picUrl).fileName());
+#endif
     return true;
 }
 
@@ -341,6 +393,11 @@ bool Widget::readMovie(const QByteArray &data)
     }
 
     m_viewer->setMovie(mov);
+#ifdef QT_DEBUG
+    QFile file("tmp/" + QUrl(m_picUrl).fileName());
+    file.open(QIODevice::WriteOnly);
+    file.write(buf->data());
+#endif
     return true;
 }
 

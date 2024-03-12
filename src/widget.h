@@ -4,9 +4,13 @@
 #include <QMap>
 #include <QStringList>
 #include <QtNetwork/QNetworkAccessManager>
+#include <QSettings>
 
 QT_BEGIN_NAMESPACE
-namespace Ui { class Widget; }
+namespace Ui
+{
+class Widget;
+}
 QT_END_NAMESPACE
 
 class ImageView;
@@ -51,6 +55,9 @@ private:
     QStringList m_sfwList;
     QStringList m_nsfwList;
 
-    QStringList m_supportedMovieFmts;
-    QStringList m_supportedImageFmts;
+    QByteArrayList m_supportedMovieFmts;
+    QByteArrayList m_supportedImageFmts;
+
+    QSettings m_settings;
+    QString m_lastPath;
 };
