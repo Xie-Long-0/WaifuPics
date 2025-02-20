@@ -3,8 +3,10 @@
 #include <QTransform>
 #include <QMouseEvent>
 #include <QDebug>
+#include <QPainterPath>
 
-ImageView::ImageView(QWidget *parent) : QWidget(parent)
+ImageView::ImageView(QWidget *parent)
+    : QWidget(parent)
 {
 }
 
@@ -20,7 +22,23 @@ void ImageView::setImage(const QImage &img)
         m_movie = nullptr;
     }
     m_img = img;
-    zoomAuto();
+    if (m_firstUpdate)
+    {
+        //zoom100();
+        zoomAuto();
+        m_firstUpdate = false;
+    }
+    else
+    {
+        update();
+    }
+}
+
+void ImageView::reset()
+{
+    m_img = QImage();
+    m_firstUpdate = true;
+    update();
 }
 
 void ImageView::setMovie(QMovie *mov)
@@ -44,14 +62,14 @@ void ImageView::setMovie(QMovie *mov)
 
 void ImageView::zoomIn()
 {
-    QPointF pos(width() / 2.0, height() / 2.0);
-    zoomInAtPos(pos);
+    QPointF pos(width() * 0.5, height() * 0.5);
+    zoomAtPos(pos, m_factor * 1.25);
 }
 
 void ImageView::zoomOut()
 {
-    QPointF pos(width() / 2.0, height() / 2.0);
-    zoomOutAtPos(pos);
+    QPointF pos(width() * 0.5, height() * 0.5);
+    zoomAtPos(pos, m_factor / 1.25);
 }
 
 void ImageView::zoom100()
@@ -73,9 +91,15 @@ void ImageView::zoomAuto()
 
 void ImageView::centerImage()
 {
-    m_x = (width() - m_w) / 2.0;
-    m_y = (height() - m_h) / 2.0;
+    m_x = (width() - m_w) * 0.5;
+    m_y = (height() - m_h) * 0.5;
     update();
+}
+
+void ImageView::setScaleFactor(double factor)
+{
+    QPointF pos(width() * 0.5, height() * 0.5);
+    zoomAtPos(pos, factor);
 }
 
 void ImageView::mousePressEvent(QMouseEvent *e)
@@ -124,23 +148,30 @@ void ImageView::mouseMoveEvent(QMouseEvent *e)
 
 void ImageView::wheelEvent(QWheelEvent *e)
 {
-    if (m_img.isNull()) return;
+    if (m_img.isNull())
+        return;
 
     // 滚轮放大
     if (e->angleDelta().y() > 0)
     {
-        zoomOutAtPos(e->position());
+        // NOTE: 保持居中
+        //zoomIn();
+        zoomAtPos(e->position(), m_factor * 1.25);
     }
     // 滚轮缩小
     else if (e->angleDelta().y() < 0)
     {
-        zoomInAtPos(e->position());
+        // NOTE: 保持居中
+        //zoomOut();
+        zoomAtPos(e->position(), m_factor / 1.25);
     }
 }
 
 void ImageView::paintEvent(QPaintEvent *e)
 {
-    if (m_img.isNull()) return QWidget::paintEvent(e);
+    QWidget::paintEvent(e);
+    if (m_img.isNull())
+        return;
 
     QPainter pt(this);
     pt.setRenderHint(QPainter::Antialiasing);
@@ -152,61 +183,53 @@ void ImageView::paintEvent(QPaintEvent *e)
     // 应用转换
     pt.setTransform(tf);
     // 从绘图坐开始绘制图片
-    pt.drawImage(0, 0, m_img);
-    pt.end();
+    pt.drawImage(0, 0, m_img);    
 
-    QWidget::paintEvent(e);
+    pt.end();
 }
 
 void ImageView::resizeEvent(QResizeEvent *e)
 {
-    if (m_img.isNull()) return QWidget::resizeEvent(e);
+    QWidget::resizeEvent(e);
+    if (m_img.isNull())
+        return;
 
     if (m_w < width() && m_h < height())
     {
         adaptFactor();
     }
     adjustImage();
-    QWidget::resizeEvent(e);
 }
 
-void ImageView::zoomInAtPos(const QPointF &pos)
+void ImageView::zoomAtPos(const QPointF &pos, double factor)
 {
-    if (m_factor > 0.25 || m_w > width() || m_h > height())
-    {
-        m_factor /= 1.25;
-        // 限制最小缩放倍数
-        if (m_factor < 0.25 && m_w < width() && m_h < height()) m_factor = 0.25;
-        
-        m_x = pos.x() - (pos.x() - m_x) / 1.25;
-        m_y = pos.y() - (pos.y() - m_y) / 1.25;
-        m_w = m_img.width() * m_factor;
-        m_h = m_img.height() * m_factor;
-        adjustImage();
-        update();
-        emit factorChanged(m_factor);
-    }
-}
+    if (m_img.isNull() || factor < 0)
+        return;
 
-void ImageView::zoomOutAtPos(const QPointF &pos)
-{
-    if (m_factor < 100)
-    {
-        m_factor *= 1.25;
-        if (m_factor > 100)
-            m_factor = 100;
-        m_x = pos.x() - (pos.x() - m_x) * 1.25;
-        m_y = pos.y() - (pos.y() - m_y) * 1.25;
-        m_w = m_img.width() * m_factor;
-        m_h = m_img.height() * m_factor;
-        adjustImage();
-        update();
-        emit factorChanged(m_factor);
-    }
+    if (factor > m_maxFactor)
+        factor = m_maxFactor;
+    else if (factor < m_minFactor && m_w < width() && m_h < height())
+        factor = m_minFactor;
+
+    if (qFuzzyCompare(factor, m_factor))
+        return;
+
+    double f = factor / m_factor;
+    m_factor = factor;
+    m_x = pos.x() - (pos.x() - m_x) * f;
+    m_y = pos.y() - (pos.y() - m_y) * f;
+    m_w = m_img.width() * m_factor;
+    m_h = m_img.height() * m_factor;
+    adjustImage();
+    update();
+    emit factorChanged(m_factor);
 }
 
 void ImageView::adaptFactor()
 {
+    if (m_img.isNull())
+        return;
+
     double w = (double)width() / m_img.width();
     double h = (double)height() / m_img.height();
     // 选择长的一边填充窗口
@@ -227,8 +250,8 @@ void ImageView::adaptFactor()
 
 void ImageView::adjustImage()
 {
-    // 当图像缩放倍率小于25%，且图像大小小于窗口大小时，图像限制在窗口大小
-    if (m_w <= width() && m_h <= height() && m_factor < 0.25)
+    // 当图像缩放倍率小于最小倍率，且图像大小小于窗口大小时，图像限制在窗口大小
+    if (m_w <= width() && m_h <= height() && m_factor < m_minFactor)
     {
         adaptFactor();
         centerImage();
@@ -252,8 +275,11 @@ void ImageView::adjustImage()
         m_y = height() - m_h;
 
     if (m_w < width())
-        m_x = (width() - m_w) / 2.0;
+        m_x = (width() - m_w) * 0.5;
 
     if (m_h < height())
-        m_y = (height() - m_h) / 2.0;
+        m_y = (height() - m_h) * 0.5;
+
+    // NOTE: 保持居中
+    //centerImage();
 }

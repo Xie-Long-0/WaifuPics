@@ -368,3 +368,4 @@ build/
 out/
 CMakePresets.json
 CMakeUserPresets.json
+CMakeSettings.json
